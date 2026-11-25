@@ -31,7 +31,7 @@
     cursor:pointer;
   }
   nav button.active{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
-  .view{width:100%; max-width:720px; display:none;}
+  .view{width:100%; max-width:1100px; display:none;}
   .view.active{display:block;}
 
   .paper{
@@ -110,6 +110,37 @@
   .emptyBox{color:var(--ink-soft); font-style:italic; margin-top:10px;}
 
   .grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:14px; margin-top:10px;}
+  .community{margin-top:30px;}
+  .community h2{font-family:"Aref Ruqaa",serif; text-align:center;}
+  .community-rail{
+    display:flex; gap:14px; overflow-x:auto; padding:8px 4px 18px;
+    scroll-snap-type:x mandatory; direction:rtl; overscroll-behavior-inline:contain;
+  }
+  .public-question{
+    flex:0 0 min(82vw,390px); scroll-snap-align:start; align-self:flex-start;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:10px;
+    padding:16px; box-shadow:0 6px 16px var(--box-shadow);
+  }
+  .public-question .question-text{font:1.45rem "Aref Ruqaa",serif; overflow-wrap:anywhere;}
+  .reply-list{display:flex; flex-direction:column; gap:8px; margin-top:12px;}
+  .reply{
+    border-right:2px solid var(--card-border); padding:7px 10px 7px 4px;
+    overflow-wrap:anywhere;
+  }
+  [hidden]{display:none !important;}
+  .reply-text{font-size:1rem;}
+  .reply-who{font-size:.8rem; color:var(--ink-soft); margin-top:3px;}
+  .reply-action,.admin-actions button,.cancel-reply{
+    font: .9rem "Tajawal",sans-serif; border:1px solid var(--card-border);
+    border-radius:14px; padding:4px 10px; background:var(--card-bg); cursor:pointer;
+  }
+  .reply-form textarea{font:1rem "Tajawal",sans-serif; min-height:70px; margin-top:10px;}
+  .reply-form input[type=text]{font:1rem "Tajawal",sans-serif; font-size:1rem;}
+  .reply-form .row{margin-top:8px;}
+  .reply-form .primary{font-size:1.1rem; padding:7px 18px; margin-top:10px;}
+  .reply-target{font-size:.9rem; color:var(--ink-soft); margin-top:8px;}
+  .admin-actions{display:flex; gap:8px; margin-top:12px;}
+  .admin-actions .delete-question{color:var(--danger);}
   .gcard{
     background:var(--card-bg); border:1px solid var(--card-border); border-radius:8px;
     padding:14px; font-family:"Aref Ruqaa", serif; font-size:1.3rem; position:relative;
@@ -146,6 +177,12 @@
     <div class="status" id="submitStatus"></div>
     <div class="miniBoxWrap"><div id="miniBox">📦</div></div>
   </div>
+  <section class="community" aria-labelledby="communityTitle">
+    <h2 id="communityTitle">أسئلة المجتمع</h2>
+    <div class="sub">اسحب جانبياً لتصفح الأسئلة، ويمكنك الرد على السؤال أو على رد آخر.</div>
+    <div class="status" id="communityStatus">جار تحميل الأسئلة...</div>
+    <div class="community-rail" id="communityRail" aria-live="polite"></div>
+  </section>
 </div>
 
 <div class="view" id="view-admin">
@@ -159,6 +196,7 @@
       <button id="tabDraw" class="active">🎲 اسحب سؤالاً</button>
       <button id="tabGrid">🔳 كل الأسئلة</button>
     </nav>
+    <div class="status" id="adminStatus" role="status"></div>
     <div id="tab-draw" class="boxWrap">
       <svg id="boxSvg" viewBox="0 0 220 180" xmlns="http://www.w3.org/2000/svg">
         <rect x="20" y="70" width="180" height="100" rx="6" fill="var(--box-wood)"/>
@@ -179,8 +217,8 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, doc, updateDoc,
-  query, orderBy, onSnapshot
+  getFirestore, collection, addDoc, deleteDoc, doc, getDocs, onSnapshot,
+  orderBy, query, updateDoc, where, writeBatch
 } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
@@ -205,7 +243,8 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 let allQuestions = [];
-let unsubSnapshot = null;
+let allReplies = [];
+let isAdmin = false;
 
 function esc(s){
   return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -218,7 +257,7 @@ function showView(view){
   $("navSubmit").classList.toggle("active", view==="submit");
   $("navAdmin").classList.toggle("active", view==="admin");
   $("tagline").textContent = view==="admin"
-    ? "هزّ الصندوق لسحب سؤال، أو تصفح كل الأسئلة التي وصلت."
+    ? "هزّ الصندوق لسحب سؤال، أو عدّل الأسئلة من العرض الشبكي."
     : "ضع سؤالك في الصندوق — باسمك أو بدون اسم.";
 }
 $("navSubmit").addEventListener("click", ()=>showView("submit"));
@@ -280,11 +319,12 @@ $("logoutBtn").addEventListener("click", ()=> signOut(auth));
 
 onAuthStateChanged(auth, (user)=>{
   const statusEl = $("loginStatus");
-  if(user && user.uid === ADMIN_UID){
+  isAdmin = Boolean(user && user.uid === ADMIN_UID);
+  if(isAdmin){
     statusEl.textContent = "";
     $("loginBox").style.display = "none";
     $("adminContent").style.display = "block";
-    if(!unsubSnapshot) subscribeQuestions();
+    renderGrid();
   }else{
     if(user){
       statusEl.textContent = "هذا الحساب غير مخوّل بالدخول.";
@@ -298,11 +338,154 @@ onAuthStateChanged(auth, (user)=>{
 
 function subscribeQuestions(){
   const q = query(collection(db,"questions"), orderBy("createdAt","desc"));
-  unsubSnapshot = onSnapshot(q, snap=>{
+  onSnapshot(q, snap=>{
     allQuestions = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    $("communityStatus").textContent = allQuestions.length ? "" : "لا توجد أسئلة بعد.";
+    $("communityStatus").className = "status";
+    renderCommunity();
     renderGrid();
+  }, error=>{
+    $("communityStatus").textContent = "تعذّر تحميل الأسئلة. تأكد من نشر قواعد Firestore.";
+    $("communityStatus").className = "status err";
+    console.error("Could not load questions:", error);
   });
 }
+
+function subscribeReplies(){
+  const q = query(collection(db,"replies"), orderBy("createdAt","asc"));
+  onSnapshot(q, snap=>{
+    allReplies = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    renderReplyLists();
+  }, error=>{
+    $("communityStatus").textContent = "تعذّر تحميل الردود. تأكد من نشر قواعد Firestore.";
+    $("communityStatus").className = "status err";
+    console.error("Could not load replies:", error);
+  });
+}
+
+function questionReplies(questionId){
+  return allReplies.filter(reply => reply.questionId === questionId);
+}
+
+function renderReply(reply, childrenByParent, depth=0){
+  const who = reply.isAnonymous || !reply.name ? "مجهول" : esc(reply.name);
+  const children = childrenByParent.get(reply.id) || [];
+  return '<div class="reply" style="margin-right:'+Math.min(depth+1,6)*10+'px">'
+    + '<div class="reply-text">'+esc(reply.text)+'</div>'
+    + '<div class="reply-who">— '+who+'</div>'
+    + '<button type="button" class="reply-action" data-question-id="'+esc(reply.questionId)
+    + '" data-parent-id="'+esc(reply.id)+'" data-reply-name="'+who+'">رد</button>'
+    + children.map(child => renderReply(child,childrenByParent,depth+1)).join("")
+    + '</div>';
+}
+
+function renderReplyTree(questionId){
+  const replies = questionReplies(questionId);
+  const replyIds = new Set(replies.map(reply=>reply.id));
+  const childrenByParent = new Map();
+  const roots = [];
+  for(const reply of replies){
+    if(reply.parentId && replyIds.has(reply.parentId)){
+      const children = childrenByParent.get(reply.parentId) || [];
+      children.push(reply);
+      childrenByParent.set(reply.parentId,children);
+    }else{
+      roots.push(reply);
+    }
+  }
+  return roots.map(reply=>renderReply(reply,childrenByParent)).join("");
+}
+
+function renderReplyLists(){
+  document.querySelectorAll(".reply-list").forEach(list=>{
+    list.innerHTML = renderReplyTree(list.dataset.questionId);
+  });
+}
+
+function renderCommunity(){
+  const rail = $("communityRail");
+  rail.innerHTML = allQuestions.map(question=>{
+    const who = question.isAnonymous || !question.name ? "مجهول" : esc(question.name);
+    const date = question.createdAt ? new Date(question.createdAt).toLocaleString("ar") : "";
+    return '<article class="public-question">'
+      + '<div class="question-text">«'+esc(question.text)+'»</div>'
+      + '<div class="gwho">— '+who+' · '+esc(date)+'</div>'
+      + '<div class="reply-list" data-question-id="'+esc(question.id)+'">'
+      + renderReplyTree(question.id)+'</div>'
+      + '<form class="reply-form" data-question-id="'+esc(question.id)+'" data-parent-id="">'
+      + '<div class="reply-target" hidden></div>'
+      + '<button type="button" class="cancel-reply" hidden>إلغاء الرد</button>'
+      + '<textarea class="reply-content" maxlength="600" placeholder="اكتب ردك..." required></textarea>'
+      + '<div class="row"><input type="text" class="reply-name" maxlength="60" placeholder="اسمك">'
+      + '<label><input type="checkbox" class="reply-anonymous"> رد مجهول</label></div>'
+      + '<button class="primary" type="submit">أضف ردًا</button>'
+      + '<div class="status reply-status" role="status"></div></form>'
+      + '</article>';
+  }).join("");
+  renderReplyLists();
+}
+
+$("communityRail").addEventListener("click", event=>{
+  const button = event.target.closest(".reply-action");
+  if(button){
+    const form = $("communityRail").querySelector(
+      '.reply-form[data-question-id="'+CSS.escape(button.dataset.questionId)+'"]'
+    );
+    if(!form) return;
+    form.dataset.parentId = button.dataset.parentId;
+    const target = form.querySelector(".reply-target");
+    target.textContent = "رد على: "+button.dataset.replyName;
+    target.hidden = false;
+    form.querySelector(".cancel-reply").hidden = false;
+    form.querySelector(".reply-content").focus();
+    return;
+  }
+  const cancel = event.target.closest(".cancel-reply");
+  if(cancel){
+    const form = cancel.closest(".reply-form");
+    form.dataset.parentId = "";
+    form.querySelector(".reply-target").hidden = true;
+    cancel.hidden = true;
+  }
+});
+
+$("communityRail").addEventListener("submit", async event=>{
+  const form = event.target.closest(".reply-form");
+  if(!form) return;
+  event.preventDefault();
+  const text = form.querySelector(".reply-content").value.trim();
+  const status = form.querySelector(".reply-status");
+  if(!text){
+    status.textContent = "اكتب ردك أولاً.";
+    status.className = "status reply-status err";
+    return;
+  }
+  const submit = form.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try{
+    await addDoc(collection(db,"replies"),{
+      questionId: form.dataset.questionId,
+      parentId: form.dataset.parentId || null,
+      text,
+      name: form.querySelector(".reply-anonymous").checked
+        ? null : (form.querySelector(".reply-name").value.trim() || null),
+      isAnonymous: form.querySelector(".reply-anonymous").checked,
+      createdAt: Date.now()
+    });
+    form.reset();
+    form.dataset.parentId = "";
+    form.querySelector(".reply-target").hidden = true;
+    form.querySelector(".cancel-reply").hidden = true;
+    status.textContent = "تم نشر ردك.";
+    status.className = "status reply-status ok";
+  }catch(error){
+    status.textContent = "تعذّر نشر الرد. حاول مرة أخرى.";
+    status.className = "status reply-status err";
+    console.error("Could not post reply:", error);
+  }finally{
+    submit.disabled = false;
+  }
+});
 
 $("tabDraw").addEventListener("click", ()=>showAdminTab("draw"));
 $("tabGrid").addEventListener("click", ()=>showAdminTab("grid"));
@@ -328,12 +511,19 @@ $("shakeBtn").addEventListener("click", async ()=>{
   const pick = unused[Math.floor(Math.random()*unused.length)];
   const who = pick.isAnonymous || !pick.name ? "مجهول" : esc(pick.name);
   reveal.innerHTML = '<div class="questionCard">«'+esc(pick.text)+'»<div class="who">— '+who+'</div></div>';
-  try{ await updateDoc(doc(db,"questions",pick.id), {used:true}); }catch(e){}
+  try{
+    await updateDoc(doc(db,"questions",pick.id), {used:true});
+  }catch(error){
+    reveal.insertAdjacentHTML("beforeend",
+      '<div class="status err">تعذّر حفظ حالة السؤال في قاعدة البيانات.</div>');
+    console.error("Could not mark question as used:", error);
+  }
   btn.disabled = false;
 });
 
 function renderGrid(){
   const grid = $("tab-grid");
+  $("adminStatus").textContent = "";
   if(allQuestions.length === 0){ grid.innerHTML = '<div class="emptyBox">لا توجد أسئلة بعد.</div>'; return; }
   grid.innerHTML = allQuestions.map(q=>{
     const who = q.isAnonymous || !q.name ? "مجهول" : esc(q.name);
@@ -341,9 +531,63 @@ function renderGrid(){
     return '<div class="gcard '+(q.used?'used':'')+'">'
       + '<span class="badge">'+(q.used?'تم سحبه':'في الصندوق')+'</span>'
       + '<div>«'+esc(q.text)+'»</div>'
-      + '<div class="gwho">— '+who+' · '+esc(d)+'</div></div>';
+      + '<div class="gwho">— '+who+' · '+esc(d)+'</div>'
+      + (isAdmin ? '<div class="admin-actions"><button type="button" data-action="edit" data-id="'
+        +esc(q.id)+'">تعديل</button><button type="button" class="delete-question" data-action="delete" data-id="'
+        +esc(q.id)+'">حذف</button></div>' : '')
+      + '</div>';
   }).join("");
 }
+
+$("tab-grid").addEventListener("click", async event=>{
+  const button = event.target.closest("[data-action]");
+  if(!button || !isAdmin) return;
+  const question = allQuestions.find(item=>item.id === button.dataset.id);
+  if(!question) return;
+  const status = $("adminStatus");
+  if(button.dataset.action === "edit"){
+    const edited = window.prompt("عدّل نص السؤال:",question.text);
+    if(edited === null) return;
+    const text = edited.trim();
+    if(!text || text.length > 600){
+      status.textContent = "يجب أن يكون السؤال بين حرف واحد و600 حرف.";
+      status.className = "status err";
+      return;
+    }
+    try{
+      await updateDoc(doc(db,"questions",question.id),{text});
+      status.textContent = "تم تعديل السؤال.";
+      status.className = "status ok";
+    }catch(error){
+      status.textContent = "تعذّر تعديل السؤال.";
+      status.className = "status err";
+      console.error("Could not edit question:",error);
+    }
+    return;
+  }
+  if(button.dataset.action === "delete" && window.confirm("هل تريد حذف هذا السؤال؟")){
+    try{
+      await deleteDoc(doc(db,"questions",question.id));
+      const replySnapshot = await getDocs(query(
+        collection(db,"replies"),where("questionId","==",question.id)
+      ));
+      for(let index=0; index<replySnapshot.docs.length; index+=450){
+        const batch = writeBatch(db);
+        replySnapshot.docs.slice(index,index+450).forEach(reply=>batch.delete(reply.ref));
+        await batch.commit();
+      }
+      status.textContent = "تم حذف السؤال وردوده.";
+      status.className = "status ok";
+    }catch(error){
+      status.textContent = "تعذّر حذف السؤال أو بعض ردوده.";
+      status.className = "status err";
+      console.error("Could not delete question and replies:",error);
+    }
+  }
+});
+
+subscribeQuestions();
+subscribeReplies();
 </script>
 </body>
 </html>
