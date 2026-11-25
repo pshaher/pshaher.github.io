@@ -233,7 +233,10 @@ import {
     messagingSenderId: "937198728491",
     appId: "1:937198728491:web:185dbed782b4de0800816e"
   };
-  const ADMIN_UID = "w9HtKA8fMMTCkJDYZ7yUvjYLPYm1";
+  const ADMIN_UIDS = [
+    "w9HtKA8fMMTCkJDYZ7yUvjYLPYm1",
+    "ppkcVESSr2NKvH62XZPS4FNsWPx2"
+  ];
 // ==============================================
 
 
@@ -319,7 +322,7 @@ $("logoutBtn").addEventListener("click", ()=> signOut(auth));
 
 onAuthStateChanged(auth, (user)=>{
   const statusEl = $("loginStatus");
-  isAdmin = Boolean(user && user.uid === ADMIN_UID);
+  isAdmin = Boolean(user && ADMIN_UIDS.includes(user.uid));
   if(isAdmin){
     statusEl.textContent = "";
     $("loginBox").style.display = "none";
