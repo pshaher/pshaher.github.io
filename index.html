@@ -334,7 +334,7 @@ onAuthStateChanged(auth, (user)=>{
     renderGrid();
   }else{
     if(user){
-      statusEl.textContent = "هذا الحساب غير مخوّل بالدخول.";
+      statusEl.textContent = "عذراً، هذا الحساب لا يملك صلاحيات الدخول المطلوبة.";
       statusEl.className = "status err";
       signOut(auth);
     }
