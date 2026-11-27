@@ -22,6 +22,8 @@
     display:flex; flex-direction:column; align-items:center;
     padding:24px 16px 48px;
   }
+  footer{margin-top:auto; padding-top:24px; color:var(--ink-soft); font-size:.75rem; text-align:center;}
+  footer a{color:inherit; text-decoration:underline; text-underline-offset:2px;}
   h1{font-family:"Aref Ruqaa", serif; font-size:2.8rem; margin:.2em 0 .1em; text-align:center;}
   .sub{color:var(--ink-soft); margin-bottom:1.4em; text-align:center;}
   nav{display:flex; gap:10px; margin-bottom:1.5em; flex-wrap:wrap; justify-content:center;}
@@ -178,7 +180,7 @@
     <div class="miniBoxWrap"><div id="miniBox">📦</div></div>
   </div>
   <section class="community" aria-labelledby="communityTitle">
-    <h2 id="communityTitle">أسئلة الآخرين</h2>
+    <h2 id="communityTitle">أسئلة المجتمع</h2>
     <div class="sub">اسحب جانبياً لتصفح الأسئلة، ويمكنك الرد على السؤال أو على رد آخر.</div>
     <div class="status" id="communityStatus">جار تحميل الأسئلة...</div>
     <div class="community-rail" id="communityRail" aria-live="polite"></div>
@@ -213,6 +215,8 @@
 </div>
 
 <div id="flyPaper"></div>
+
+<footer>Made with <span aria-label="love">❤</span> by <a href="https://github.com/pshaher/" target="_blank" rel="noopener noreferrer">Philopateer Makary</a></footer>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
